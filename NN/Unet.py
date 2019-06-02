@@ -8,6 +8,7 @@ import numpy as np
 import torch.optim as optim
 import mhd
 import json
+import cv2
 import tqdm
 
 
@@ -78,11 +79,82 @@ def load_json(filename):
 
 
 if __name__ == '__main__':
+    ########################################################
     net = Unet()
     criterion = nn.MSELoss()
+    # target = torch.rand(10)
     optimizer = optim.Adam(net.parameters(), lr=0.01)
-    datadir = r'C:\Users\wangdian\PycharmProjects\pytorch\Liver dataset\Data'
+    # optimizer.zero_grad()
+    # output = Unet(input)
+    # loss = criterion(output, target)
+    # loss.backward()
+    # optimizer.step()
+
+    datadir = '../dataset'
     datalist = load_json('phase_liverfibrosis.json')
+    # # groups = split_dataset(datalist, 2)
+    # dataset = {}
+    # y_shape = [128, 128]
+    # original_shape = [128, 128]
+    # n_classes = 1
+
+    ######################
+
+    IDs = tqdm.tqdm(os.listdir(datadir), desc='Loading images')
+    ID = iter(IDs).__next__()
+    image = mhd.read(os.path.join(datadir, ID, 'image.mhd'))[0]
+    vmask = mhd.read(os.path.join(datadir, ID, 'vmask.mhd'))[0]
+    data = {}
+    data['x'] = np.expand_dims((image / 255.0).astype(np.float32), -1)
+    data['y'] = np.expand_dims(vmask, -1)
+
+    # x = data['x'][213]  # (1, 1, 128, 128)
+    # x = x.squeeze(axis=-1)
+    # x = np.expand_dims(x, axis=0)
+    # x = np.expand_dims(x, axis=0)
+    # x = torch.tensor(x)
+    # y = data['y'][213]
+    # y = y.squeeze(axis=-1)
+    # y = cv2.resize(y, (36, 36))
+    # y1 = np.where(y == 7, 1., 0.).astype(np.float32)
+    # y2 = np.where(y == 8, 1., 0.).astype(np.float32)
+    # y = np.stack([y1, y2])
+    # y = np.expand_dims(y, axis=0)
+    # y = torch.tensor(y)
+
+    for i in range(100):
+        optimizer.zero_grad()
+        out = net(x)
+        loss = criterion(out, y)
+        loss.backward(retain_graph=True)
+        print("epoch = {}, loss = {:.5f}".format(i + 1, loss.data))
+        optimizer.step()
+
+
+
+
+
+    ########################################################
+
+    # net = Unet()
+    # criterion = nn.MSELoss()
+    # optimizer = optim.Adam(net.parameters(), lr=0.01)
+    # datadir = r'C:\Users\wangdian\PycharmProjects\pytorch\Liver dataset\Data'
+    # datalist = load_json('phase_liverfibrosis.json')
+    #
+
+
+
+
+
+
+
+
+
+
+
+
+
     # groups = split_dataset(datalist, 2)
     # dataset = {}
     # y_shape = [512, 512]
