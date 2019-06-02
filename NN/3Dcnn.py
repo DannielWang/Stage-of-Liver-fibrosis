@@ -6,12 +6,12 @@ from Layer import FullyConnected
 
 
 class CNN(nn.Module):
-    def __init__(self, in_channel, out_channel, dpeth, heigth, width, kernel_size=3):
+    def __init__(self, in_channel, out_channel, kernel_size=3):
         super(CNN, self).__init__()
 
-        self.contract1 = ContractC.Contract(in_channel, out_channel, dpeth, heigth, width, kernel_size)
-        self.contract2 = ContractC.Contract(out_channel, out_channel >> 1, dpeth, heigth, width, kernel_size)
-        self.contract3 = ContractC.Contract(out_channel >> 1, (out_channel >> 1) >> 1, dpeth, heigth, width, kernel_size)
+        self.contract1 = ContractC.Contract(in_channel, out_channel, kernel_size)
+        self.contract2 = ContractC.Contract(out_channel, out_channel >> 1,  kernel_size)
+        self.contract3 = ContractC.Contract(out_channel >> 1, (out_channel >> 1) >> 1, kernel_size)
         self.fcl = FullyConnected.Fullyconnected()
 
     def forward(self, x):

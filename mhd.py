@@ -152,7 +152,7 @@ def read(filename):
     data = np.frombuffer(data,dtype=np.dtype(_metatype2dtype_table[header['ElementType']]))
     dim = _get_dim(header)
     image = np.reshape(data,list(reversed(dim)),order='C')
-    image.setflags(write=1)
+    # image.setflags(write=1)
     return image, header
 
 _default_header = {
