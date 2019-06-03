@@ -18,6 +18,7 @@ class Unet(nn.Module):
 
         kernel_size = 3
         # define the module object of each layer
+        self.conv = nn.Conv3d(1,3, kernel_size)
         self.conv1 = nn.Conv3d(3, 32, kernel_size)
         self.conv2 = nn.Conv3d(32, 64, kernel_size)
         self.contract1 = ContractU.Contract(64, 128, kernel_size)
@@ -34,7 +35,8 @@ class Unet(nn.Module):
 
     def forward(self, x):
         # Convolution operation
-        out = self.conv1(x)
+        out = self.conv(x)
+        out = self.conv1(out)
         out = self.normaliztion1(out)
         out = F.relu(out, inplace=False)
         out = self.conv2(out)
@@ -148,16 +150,14 @@ if __name__ == '__main__':
     Image_shape = [512, 512]
     # n_classes = 1
 
-    IDs = tqdm.tqdm(os.listdir(datadir), desc='Loading images')
-    ID = iter(IDs).__next__()
-    image = mhd.read(os.path.join(datadir, ID))[0]
-    vmask = mhd.read(os.path.join(labeldir, ID[:-9] + 'label.mhd'))[0]
-    data = {}
-    print(image.shape)
-    print(vmask.shape)
-    data['x'] = np.expand_dims((image / 255.0).astype(np.float32), -1)
-    data['y'] = np.expand_dims(vmask, -1)
-    dataset[ID] = data
+    for ID in  tqdm.tqdm(os.listdir(datadir), desc='Loading images'):
+    # ID = iter(IDs).__next__()
+        image = mhd.read(os.path.join(datadir, ID))[0]
+        vmask = mhd.read(os.path.join(labeldir, ID[:-9] + 'label.mhd'))[0]
+        data = {}
+        data['x'] = np.expand_dims((image / 255.0).astype(np.float32), 0)
+        data['y'] = np.expand_dims(vmask, 0)
+        dataset[ID] = data
 
     ###################################################
     # print('x', data['x'].shape)
@@ -190,7 +190,7 @@ if __name__ == '__main__':
 
     from datetime import datetime
 
-    result_basedir = 'unet_train_' + datetime.today().strftime("%y%m%d_%H%M%S")
+    result_basedir = '3dunet_train_' + datetime.today().strftime("%y%m%d_%H%M%S")
     os.makedirs(result_basedir, exist_ok=True)
     import sys, shutil
 
@@ -218,11 +218,8 @@ if __name__ == '__main__':
             x_train = np.concatenate([dataset[ID]['x'] for ID in train_IDs])
             y_train = np.concatenate([dataset[ID]['y'] for ID in train_IDs])
             optimizer.zero_grad()
-            print('xtrain', x_train.shape)
-            x = np.expand_dims(x_train, axis=-1)
-            print('x', x.shape)
             x = torch.from_numpy(x_train)
-            print('tensorx', x.shape)
+            x = x.unsqueeze(0)
             out = net(x)
             loss = criterion(out, dataset[ID].long())
             loss.backward()
