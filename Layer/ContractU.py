@@ -14,9 +14,9 @@ class Contract(nn.Module):
 
     def forward(self, x):
         out = self.conv1(x)
-        out = F.relu(out)
+        out = F.relu(out, inplace=False)
         out = self.normalization1(out)
         out = self.conv2(out)
-        out = F.relu(out)
+        out = F.relu(out, inplace=False)
         out = self.normalization2(out)
         return out

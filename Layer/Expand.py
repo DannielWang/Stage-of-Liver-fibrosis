@@ -15,7 +15,7 @@ class Expand(nn.Module):
         self.normalization = nn.BatchNorm3d(out_channel)
 
     def forward(self, x, left_tensor):
-        out = self.upsamp(x)
+        out = F.interpolate(x, scale_factor=2, mode='nearest')
         # out = self.conv(out)
         # cropping
         #
