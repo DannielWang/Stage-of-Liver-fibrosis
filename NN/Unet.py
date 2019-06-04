@@ -247,8 +247,10 @@ if __name__ == '__main__':
 
             # save model
             with open(os.path.join(result_dir, 'unet_model.json'), 'w') as f:
-                f.write(out.to_json())
-            out.save_weights(os.path.join(result_dir, 'unet_model_weights.h5'))
+                # f.write(out.to_json())
+                json.dump(out,f)
+            torch.save(out, os.path.join(result_dir)+'3dunet_model_weights.h5')
+            # out.save_weights(os.path.join(result_dir, 'unet_model_weights.h5'))
 
             for test_ID in tqdm.tqdm(test_IDs, desc='Testing'):
                 x_test = dataset[test_ID]['x']
