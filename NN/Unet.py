@@ -134,7 +134,7 @@ if __name__ == '__main__':
     ########################################################
     net = Unet()
     criterion = nn.MSELoss()
-    optimizer = optim.Adam(net.parameters(), lr=0.01, )
+    optimizer = optim.Adam(net.parameters(), lr=0.01,weight_decay=0.001 )
     # optimizer.zero_grad()
     # output = Unet(input)
     # loss = criterion(output, target)
@@ -164,7 +164,19 @@ if __name__ == '__main__':
                     data['x'] = np.expand_dims((image / 255.0).astype(np.float32), 0)
                     data['y'] = np.expand_dims(vmask, 0)
                     dataset[ID] = data
-
+    all_IDs = sorted(dataset.keys())
+    if os.path.isfile(ID):
+        out = ID.split('.')
+        if len(ID) >=2:
+            if out[1] == 'mhd':
+                datalist = {key: [ID for ID in datalist[key] if ID in all_IDs] for key in datalist.keys()}
+    optimizer.zero_grad()
+    dataset = torch.Tensor(datalist)
+    out = net(datalist)
+    loss = criterion(out,datalist)
+    loss.backward(retain_graph=True)
+    print("epoch = {}, loss = {:.5f}".format(ID+1,loss.data))
+    optimizer.step()
         ###################################################################
 
 
@@ -197,89 +209,88 @@ if __name__ == '__main__':
     #     optimizer.step()
 
     ########################################################
-
-    from datetime import datetime
-
-    result_basedir = '3dunet_train_' + datetime.today().strftime("%y%m%d_%H%M%S")
-    os.makedirs(result_basedir, exist_ok=True)
-    import sys, shutil
+    #
+    # from datetime import datetime
+    #
+    # result_basedir = '3dunet_train_' + datetime.today().strftime("%y%m%d_%H%M%S")
+    # os.makedirs(result_basedir, exist_ok=True)
+    # import sys, shutil
+    #
+    # #
+    # shutil.copyfile(sys.argv[0], os.path.join(result_basedir, os.path.basename(sys.argv[0])))  # copy this script
+    # #
+    # all_IDs = sorted(dataset.keys())
+    #
+    # ##########################################################
+    # if os.path.isfile(ID):
+    #     out = ID.split('.')
+    #     if len(ID) >=2:
+    #         if out[1] == 'mhd':
+    #             datalist = {key: [ID for ID in datalist[key] if ID in all_IDs] for key in datalist.keys()}
+    # ##########################################################
 
     #
-    shutil.copyfile(sys.argv[0], os.path.join(result_basedir, os.path.basename(sys.argv[0])))  # copy this script
-    #
-    all_IDs = sorted(dataset.keys())
-
-    ##########################################################
-    if os.path.isfile(ID):
-        out = ID.split('.')
-        if len(ID) >=2:
-            if out[1] == 'mhd':
-                datalist = {key: [ID for ID in datalist[key] if ID in all_IDs] for key in datalist.keys()}
-    ##########################################################
-
-    #
-    k_fold = 2
-    for exp_no in range(1):
-        groups = split_dataset(datalist, k_fold)
-        exp_dir = os.path.join(result_basedir, 'exp{0}'.format(exp_no))
-        os.makedirs(exp_dir, exist_ok=True)
-        result_img_dir = os.path.join(exp_dir, 'img')
-        os.makedirs(result_img_dir, exist_ok=True)
-        save_object([g for g in groups], os.path.join(exp_dir, 'groups.json'))
-        JIs, DCs = {}, {}
-        refined_JIs, refined_DCs = {}, {}
-        for group_no, test_IDs in enumerate(groups):
-            result_dir = os.path.join(exp_dir, 'g{0}'.format(group_no))
-            os.makedirs(result_dir, exist_ok=True)
-            # es = keras.callbacks.EarlyStopping(monitor='loss', patience=1, verbose=1, mode='auto')
-            train_IDs = [ID for ID in dataset.keys() if ID not in test_IDs]
-            ###################################################################
-            if os.path.isfile(datadir + '\\' + ID):
-                out = ID.split('.')
-                if len(ID) >= 2:
-                    if out[1] == 'mhd':
-                        x_train = np.concatenate([dataset[ID]['x'] for ID in train_IDs])
-                        y_train = np.concatenate([dataset[ID]['y'] for ID in train_IDs])
-                        optimizer.zero_grad()
-                        x = torch.from_numpy(x_train)
-                        x = x.unsqueeze(0)
-                        out = net(x)
-                        loss = criterion(out, dataset[ID].long())
-                        loss.backward()
-                        optimizer.step()
-                        print('test', test_IDs)
-                        print('train', train_IDs)
-                        epochs = 4
+    # k_fold = 2
+    # for exp_no in range(1):
+    #     groups = split_dataset(datalist, k_fold)
+    #     exp_dir = os.path.join(result_basedir, 'exp{0}'.format(exp_no))
+    #     os.makedirs(exp_dir, exist_ok=True)
+    #     result_img_dir = os.path.join(exp_dir, 'img')
+    #     os.makedirs(result_img_dir, exist_ok=True)
+    #     save_object([g for g in groups], os.path.join(exp_dir, 'groups.json'))
+    #     JIs, DCs = {}, {}
+    #     refined_JIs, refined_DCs = {}, {}
+    #     for group_no, test_IDs in enumerate(groups):
+    #         result_dir = os.path.join(exp_dir, 'g{0}'.format(group_no))
+    #         os.makedirs(result_dir, exist_ok=True)
+    #         # es = keras.callbacks.EarlyStopping(monitor='loss', patience=1, verbose=1, mode='auto')
+    #         train_IDs = [ID for ID in dataset.keys() if ID not in test_IDs]
+    #         ###################################################################
+    #         if os.path.isfile(datadir + '\\' + ID):
+    #             out = ID.split('.')
+    #             if len(ID) >= 2:
+    #                 if out[1] == 'mhd':
+    #                     x_train = np.concatenate([dataset[ID]['x'] for ID in train_IDs])
+    #                     y_train = np.concatenate([dataset[ID]['y'] for ID in train_IDs])
+    #                     optimizer.zero_grad()
+    #                     x = torch.from_numpy(x_train)
+    #                     x = x.unsqueeze(0)
+    #                     out = net(x)
+    #                     loss = criterion(out, dataset[ID].long())
+    #                     loss.backward()
+    #                     optimizer.step()
+    #                     epochs = 4
             ###################################################################
             # model.fit(x_train, y_train, batch_size=4, epochs=epochs, callbacks=[es])
 
             # save model
-            with open(os.path.join(result_dir, 'unet_model.json'), 'w') as f:
-                # f.write(out.to_json())
-                json.dump(out,f)
-            torch.save(out, os.path.join(result_dir)+'3dunet_model_weights.h5')
+            # with open(os.path.join(result_dir, 'unet_model.json'), 'w') as f:
+            #     # f.write(out.to_json())
+            #     json.dump(out,f)
+            # torch.save(out, os.path.join(result_dir)+'3dunet_model_weights.h5')
             # out.save_weights(os.path.join(result_dir, 'unet_model_weights.h5'))
 
-            for test_ID in tqdm.tqdm(test_IDs, desc='Testing'):
-                x_test = dataset[test_ID+'_image.mhd']['x']
-                # x_test = torch.tensor(x_test,dtype=torch.float32)
-                # x_test = torch.Tensor(x_test)
-                print(x_test.shape)
-                # predict_y = out.predict(x_test, batch_size=4, verbose=False)
-                predict_y = nn.AdaptiveLogSoftmaxWithLoss(x_test.shape[0]*x_test.shape[1]*x_test.shape[2]*x_test.shape[3],20,cutoffs=[10,15,19]).predict(x_test)
-                predict_label = np.argmax(predict_y, axis=3).astype(np.uint8)
-                mhd.write(os.path.join(result_img_dir, test_ID + '.mhd'), predict_label)
+            # for test_ID in tqdm.tqdm(test_IDs, desc='Testing'):
+                # x_test = dataset[test_ID+'_image.mhd']['x']
+                # # x_test = torch.tensor(x_test,dtype=torch.float32)
+                # # x_test = torch.Tensor(x_test)
+                # print(x_test.shape)
+                # # predict_y = out.predict(x_test, batch_size=4, verbose=False)
+                # # predict_y = nn.AdaptiveLogSoftmaxWithLoss(x_test.shape[0]*x_test.shape[1]*x_test.shape[2]*x_test.shape[3],20,cutoffs=[4,10,15],div_value=4.0,head_bias=False).predict(x_test)
+                # predict_y = nn.AdaptiveLogSoftmaxWithLoss(out.shape[0]*out.shape[1]*out.shape[2]*out.shape[3],20,cutoffs=[4,10,15],div_value=4.0,head_bias=False).predict(x_test)
+                # predict_label = np.argmax(predict_y, axis=3).astype(np.uint8)
+                # mhd.write(os.path.join(result_img_dir, test_ID + '.mhd'), predict_label)
 
-                JIs[test_ID], DCs[test_ID] = evaluate(predict_label, np.squeeze(dataset[test_ID]['y']))
-                refined = refine_labels(predict_label)
-                mhd.write(os.path.join(result_img_dir, 'refined_' + test_ID + '.mhd'), refined)
-                refined_JIs[test_ID], refined_DCs[test_ID] = evaluate(refined, np.squeeze(dataset[test_ID]['y']))
+                # JIs[test_ID], DCs[test_ID] = evaluate(predict_label, np.squeeze(dataset[test_ID]['y']))
+                # refined = refine_labels(predict_label)
+                # mhd.write(os.path.join(result_img_dir, 'refined_' + test_ID + '.mhd'), refined)
+                # refined_JIs[test_ID], refined_DCs[test_ID] = evaluate(refined, np.squeeze(dataset[test_ID]['y']))
 
-        np.savetxt(os.path.join(exp_dir, 'JI.csv'), np.stack([JIs[ID] for ID in all_IDs]), delimiter=",", fmt='%g')
-        np.savetxt(os.path.join(exp_dir, 'Dice.csv'), np.stack([DCs[ID] for ID in all_IDs]), delimiter=",", fmt='%g')
-        np.savetxt(os.path.join(exp_dir, 'refined_JI.csv'), np.stack([refined_JIs[ID] for ID in all_IDs]),
-                   delimiter=",",
-                   fmt='%g')
-        np.savetxt(os.path.join(exp_dir, 'refined_Dice.csv'), np.stack([refined_DCs[ID] for ID in all_IDs]),
-                   delimiter=",",
-                   fmt='%g')
+        # np.savetxt(os.path.join(exp_dir, 'JI.csv'), np.stack([JIs[ID] for ID in all_IDs]), delimiter=",", fmt='%g')
+        # np.savetxt(os.path.join(exp_dir, 'Dice.csv'), np.stack([DCs[ID] for ID in all_IDs]), delimiter=",", fmt='%g')
+        # np.savetxt(os.path.join(exp_dir, 'refined_JI.csv'), np.stack([refined_JIs[ID] for ID in all_IDs]),
+        #            delimiter=",",
+        #            fmt='%g')
+        # np.savetxt(os.path.join(exp_dir, 'refined_Dice.csv'), np.stack([refined_DCs[ID] for ID in all_IDs]),
+        #            delimiter=",",
+        #            fmt='%g')
