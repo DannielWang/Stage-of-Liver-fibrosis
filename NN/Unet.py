@@ -18,7 +18,7 @@ class Unet(nn.Module):
 
         kernel_size = 3
         # define the module object of each layer
-        self.conv = nn.Conv3d(1,3, kernel_size)
+        self.conv = nn.Conv3d(1, 3, kernel_size)
         self.conv1 = nn.Conv3d(3, 32, kernel_size)
         self.conv2 = nn.Conv3d(32, 64, kernel_size)
         self.contract1 = ContractU.Contract(64, 128, kernel_size)
@@ -150,14 +150,24 @@ if __name__ == '__main__':
     Image_shape = [512, 512]
     # n_classes = 1
 
-    for ID in  tqdm.tqdm(os.listdir(datadir), desc='Loading images'):
-    # ID = iter(IDs).__next__()
-        image = mhd.read(os.path.join(datadir, ID))[0]
-        vmask = mhd.read(os.path.join(labeldir, ID[:-9] + 'label.mhd'))[0]
-        data = {}
-        data['x'] = np.expand_dims((image / 255.0).astype(np.float32), 0)
-        data['y'] = np.expand_dims(vmask, 0)
-        dataset[ID] = data
+    for ID in tqdm.tqdm(os.listdir(datadir), desc='Loading images'):
+        # ID = iter(IDs).__next__()
+
+        ###################################################################
+        if os.path.isfile(datadir + '\\' + ID):
+            out = ID.split('.')
+            if len(ID) >= 2:
+                if out[1] == 'mhd':
+                    image = mhd.read(os.path.join(datadir, ID))[0]
+                    vmask = mhd.read(os.path.join(labeldir, ID[:-9] + 'label.mhd'))[0]
+                    data = {}
+                    data['x'] = np.expand_dims((image / 255.0).astype(np.float32), 0)
+                    data['y'] = np.expand_dims(vmask, 0)
+                    dataset[ID] = data
+
+        ###################################################################
+
+
 
     ###################################################
     # print('x', data['x'].shape)
@@ -215,18 +225,24 @@ if __name__ == '__main__':
             os.makedirs(result_dir, exist_ok=True)
             # es = keras.callbacks.EarlyStopping(monitor='loss', patience=1, verbose=1, mode='auto')
             train_IDs = [ID for ID in dataset.keys() if ID not in test_IDs]
-            x_train = np.concatenate([dataset[ID]['x'] for ID in train_IDs])
-            y_train = np.concatenate([dataset[ID]['y'] for ID in train_IDs])
-            optimizer.zero_grad()
-            x = torch.from_numpy(x_train)
-            x = x.unsqueeze(0)
-            out = net(x)
-            loss = criterion(out, dataset[ID].long())
-            loss.backward()
-            optimizer.step()
-            print('test', test_IDs)
-            print('train', train_IDs)
-            epochs = 4
+            ###################################################################
+            if os.path.isfile(datadir + '\\' + ID):
+                out = ID.split('.')
+                if len(ID) >= 2:
+                    if out[1] == 'mhd':
+                        x_train = np.concatenate([dataset[ID]['x'] for ID in train_IDs])
+                        y_train = np.concatenate([dataset[ID]['y'] for ID in train_IDs])
+                        optimizer.zero_grad()
+                        x = torch.from_numpy(x_train)
+                        x = x.unsqueeze(0)
+                        out = net(x)
+                        loss = criterion(out, dataset[ID].long())
+                        loss.backward()
+                        optimizer.step()
+                        print('test', test_IDs)
+                        print('train', train_IDs)
+                        epochs = 4
+            ###################################################################
             # model.fit(x_train, y_train, batch_size=4, epochs=epochs, callbacks=[es])
 
             # save model
