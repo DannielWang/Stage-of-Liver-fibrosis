@@ -208,7 +208,15 @@ if __name__ == '__main__':
     shutil.copyfile(sys.argv[0], os.path.join(result_basedir, os.path.basename(sys.argv[0])))  # copy this script
     #
     all_IDs = sorted(dataset.keys())
-    datalist = {key: [ID for ID in datalist[key] if ID in all_IDs] for key in datalist.keys()}
+
+    ##########################################################
+    if os.path.isfile(ID):
+        out = ID.split('.')
+        if len(ID) >=2:
+            if out[1] == 'mhd':
+                datalist = {key: [ID for ID in datalist[key] if ID in all_IDs] for key in datalist.keys()}
+    ##########################################################
+
     #
     k_fold = 2
     for exp_no in range(1):
@@ -253,15 +261,18 @@ if __name__ == '__main__':
             # out.save_weights(os.path.join(result_dir, 'unet_model_weights.h5'))
 
             for test_ID in tqdm.tqdm(test_IDs, desc='Testing'):
-                x_test = dataset[test_ID]['x']
-                predict_y = out.predict(x_test, batch_size=4, verbose=False)
-
+                x_test = dataset[test_ID+'_image.mhd']['x']
+                # x_test = torch.tensor(x_test,dtype=torch.float32)
+                # x_test = torch.Tensor(x_test)
+                print(x_test.shape)
+                # predict_y = out.predict(x_test, batch_size=4, verbose=False)
+                predict_y = nn.AdaptiveLogSoftmaxWithLoss(x_test.shape[0]*x_test.shape[1]*x_test.shape[2]*x_test.shape[3],20,cutoffs=[10,15,19]).predict(x_test)
                 predict_label = np.argmax(predict_y, axis=3).astype(np.uint8)
-                mhd.write(os.path.join(result_img_dir, test_ID + '.mha'), predict_label)
+                mhd.write(os.path.join(result_img_dir, test_ID + '.mhd'), predict_label)
 
                 JIs[test_ID], DCs[test_ID] = evaluate(predict_label, np.squeeze(dataset[test_ID]['y']))
                 refined = refine_labels(predict_label)
-                mhd.write(os.path.join(result_img_dir, 'refined_' + test_ID + '.mha'), refined)
+                mhd.write(os.path.join(result_img_dir, 'refined_' + test_ID + '.mhd'), refined)
                 refined_JIs[test_ID], refined_DCs[test_ID] = evaluate(refined, np.squeeze(dataset[test_ID]['y']))
 
         np.savetxt(os.path.join(exp_dir, 'JI.csv'), np.stack([JIs[ID] for ID in all_IDs]), delimiter=",", fmt='%g')
