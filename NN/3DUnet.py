@@ -107,11 +107,15 @@ if __name__ == '__main__':
                     data = {}
                     data['x'] = np.expand_dims((image / 255.0).astype(np.float32), 0)
                     data['y'] = np.expand_dims(vmask, 0)
-                    dataset[ID] = data
+                    dataset = data['x']
+                    dataset = torch.Tensor(dataset)
+                    dataset = dataset.unsqueeze(0)
     for epoch in range(4):
         running_loss = 0.0
-        for i,data in enumerate(dataset, 0):
-            inputs, labels = data
+        for i,x in enumerate(dataset, 0):
+            inputs, labels = x
+            inputs = inputs.unsqueeze(0)
+            labels = labels.unsqueeze(0)
 
             optimizer.zero_grad()
 
