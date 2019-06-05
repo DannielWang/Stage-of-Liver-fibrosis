@@ -1,8 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from Layer import ContractU
-from Layer import Expand
+from Layer import ContractU2d
+from Layer import ExpandU2d
 import os
 import numpy as np
 import torch.optim as optim
@@ -18,97 +18,46 @@ class Unet(nn.Module):
 
         kernel_size = 3
         # define the module object of each layer
-        self.conv = nn.Conv3d(1, 3, kernel_size)
-        self.conv1 = nn.Conv3d(3, 32, kernel_size)
-        self.conv2 = nn.Conv3d(32, 64, kernel_size)
-        self.contract1 = ContractU.Contract(64, 128, kernel_size)
-        self.contract2 = ContractU.Contract(128, 256, kernel_size)
-        self.contract3 = ContractU.Contract(256, 512, kernel_size)
-        self.expand1 = Expand.Expand(768, 256, kernel_size)
-        self.expand2 = Expand.Expand(384, 128, kernel_size)
-        self.expand3 = Expand.Expand(192, 64, kernel_size)
-        self.max_pool = nn.MaxPool3d(2, stride=2)
-        self.dropout = nn.Dropout3d(0.25, inplace=False)
-        self.conv3 = nn.Conv3d(64, 3, kernel_size=1)
-        self.normaliztion1 = nn.BatchNorm3d(32)
-        self.normaliztion2 = nn.BatchNorm3d(64)
+        # self.conv = nn.Conv3d(1, 3, kernel_size)
+        # self.conv1 = nn.Conv3d(3, 32, kernel_size)
+        # self.conv2 = nn.Conv3d(32, 64, kernel_size)
+        self.contract1 = ContractU2d.Contract(1, 64, kernel_size)
+        self.contract2 = ContractU2d.Contract(64, 128, kernel_size)
+        self.contract3 = ContractU2d.Contract(128, 256, kernel_size)
+        self.contract4 = ContractU2d.Contract(256, 512, kernel_size)
+        self.contract5 = ContractU2d.Contract(512, 1024, kernel_size)
+        self.expand1 = ExpandU2d.Expand(1024, 512, kernel_size)
+        self.expand2 = ExpandU2d.Expand(512, 256, kernel_size)
+        self.expand3 = ExpandU2d.Expand(256, 128, kernel_size)
+        self.expand4 = ExpandU2d.Expand(128, 64, kernel_size)
+        self.max_pool = nn.MaxPool2d(2)
+        self.dropout = nn.Dropout2d(0.25, inplace=False)
+        self.conv = nn.Conv2d(64, 2, kernel_size=1)
 
     def forward(self, x):
         # Convolution operation
-        out = self.conv(x)
-        out = self.conv1(out)
-        out = self.normaliztion1(out)
-        out = F.relu(out, inplace=False)
-        out = self.conv2(out)
-        out = self.normaliztion2(out)
-        out = F.relu(out, inplace=False)
+        out = self.contract1(x)
         # Store the tensor of each convoluted layer
         left_tensor1 = out
         out = self.max_pool(out)
-        out = self.contract1(out)
+        out = self.contract2(out)
         left_tensor2 = out
         out = self.max_pool(out)
-        out = self.contract2(out)
+        out = self.contract3(out)
         left_tensor3 = out
         out = self.max_pool(out)
-        out = self.contract3(out)
+        out = self.contract4(out)
+        left_tensor4 = out
+        out = self.max_pool(out)
         # Upsampling operation
-        out = self.expand1(out, left_tensor3)
-        out = self.expand2(out, left_tensor2)
+        out = self.expand1(out, left_tensor4)
+        out = self.expand2(out, left_tensor3)
+        out = self.expand3(out, left_tensor2)
         out = self.dropout(out)
-        out = self.expand3(out, left_tensor1)
-        out = self.conv3(out)
+        out = self.expand4(out, left_tensor1)
+        out = self.conv(out)
 
         return out
-
-
-def JaccardIndex(a, b):
-    return np.sum(a & b) / np.sum(a | b)
-
-
-def DiceCoeff(a, b):
-    return 2 * np.sum(a & b) / (np.sum(a) + np.sum(b))
-
-
-def evaluate(label1, label2):
-    max_label = max(np.max(label1), np.max(label2))
-    JIs = []
-    DCs = []
-    for i in range(1, max_label + 1):
-        a = label1 == i
-        b = label2 == i
-        JIs.append(JaccardIndex(a, b))
-        DCs.append(DiceCoeff(a, b))
-    return JIs, DCs
-
-
-def largest_CC(image, n=1):
-    labels = measure.label(image, connectivity=3, background=0)
-    area = np.bincount(labels.flat)
-    if (len(area) > 1):
-        return labels == (np.argmax(area[1:]) + 1)
-    else:
-        return np.zeros(labels.shape, np.bool)
-
-
-def refine_labels(labels):
-    refined = np.zeros_like(labels)
-    for i in range(1, np.max(labels) + 1):
-        cc = largest_CC(labels == i)
-        refined[cc] = i
-    return refined
-
-
-import json, pickle
-
-
-def save_object(obj, filename):
-    if os.path.splitext(filename)[1] == '.json':
-        with open(filename, 'w') as f:
-            json.dump(obj, f, indent=2)
-    else:
-        with open(filename, 'wb') as f:
-            pickle.dump(obj, f)
 
 
 def load_json(filename):
@@ -129,18 +78,12 @@ def split_dataset(datalist, k):
         groups.append([[ID + suffix for ID in g if ID + suffix in all_IDs] for g in ikeda_groups])
     return [sorted(np.concatenate([g[i] for g in groups]).tolist()) for i in range(k)]
 
-
+#################################################################################################################
 if __name__ == '__main__':
     ########################################################
     net = Unet()
     criterion = nn.MSELoss()
     optimizer = optim.Adam(net.parameters(), lr=0.01,weight_decay=0.001 )
-    # optimizer.zero_grad()
-    # output = Unet(input)
-    # loss = criterion(output, target)
-    # loss.backward()
-    # optimizer.step()
-
     datadir = '../dataset/Cases/Images'
     labeldir = '../dataset/Cases/Labels'
     datalist = load_json('phase_liverfibrosis.json')
@@ -151,9 +94,6 @@ if __name__ == '__main__':
     # n_classes = 1
 
     for ID in tqdm.tqdm(os.listdir(datadir), desc='Loading images'):
-        # ID = iter(IDs).__next__()
-
-        ###################################################################
         if os.path.isfile(datadir + '\\' + ID):
             out = ID.split('.')
             if len(ID) >= 2:
@@ -163,20 +103,100 @@ if __name__ == '__main__':
                     data = {}
                     data['x'] = np.expand_dims((image / 255.0).astype(np.float32), 0)
                     data['y'] = np.expand_dims(vmask, 0)
-                    dataset[ID] = data
-    all_IDs = sorted(dataset.keys())
-    if os.path.isfile(ID):
-        out = ID.split('.')
-        if len(ID) >=2:
-            if out[1] == 'mhd':
-                datalist = {key: [ID for ID in datalist[key] if ID in all_IDs] for key in datalist.keys()}
-    optimizer.zero_grad()
-    dataset = torch.Tensor(datalist)
-    out = net(datalist)
-    loss = criterion(out,datalist)
-    loss.backward(retain_graph=True)
-    print("epoch = {}, loss = {:.5f}".format(ID+1,loss.data))
-    optimizer.step()
+                    dataset = data['x']
+                    dataset = torch.Tensor(dataset)
+    for epoch in range(4):
+        running_loss = 0.0
+        for i,x in enumerate(dataset, 0):
+            inputs, labels = x
+
+            optimizer.zero_grad()
+
+            outputs = net(inputs)
+
+            loss = criterion(outputs,labels)
+            loss.backward(retain_graph=True)
+            print("epoch = {}, loss = {:.5f}".format(ID + 1, loss.data))
+            optimizer.step()
+
+            running_loss += loss.item()
+            if i % 2000 == 1999:
+                print('[%d,%5d] loss: %.3f'%(epoch+1,i+1,running_loss/2000))
+                running_loss = 0.0
+    print('Finished Training')
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# if __name__ == '__main__':
+#     ########################################################
+#     net = Unet()
+#     criterion = nn.MSELoss()
+#     optimizer = optim.Adam(net.parameters(), lr=0.01,weight_decay=0.001 )
+#     # optimizer.zero_grad()
+#     # output = Unet(input)
+#     # loss = criterion(output, target)
+#     # loss.backward()
+#     # optimizer.step()
+#
+#     datadir = '../dataset/Cases/Images'
+#     labeldir = '../dataset/Cases/Labels'
+#     datalist = load_json('phase_liverfibrosis.json')
+#     groups = split_dataset(datalist, 4)
+#     dataset = {}
+#     y_shape = [512, 512]
+#     Image_shape = [512, 512]
+#     # n_classes = 1
+
+    # for ID in tqdm.tqdm(os.listdir(datadir), desc='Loading images'):
+    #     # ID = iter(IDs).__next__()
+    #
+    #     ###################################################################
+    #     if os.path.isfile(datadir + '\\' + ID):
+    #         out = ID.split('.')
+    #         if len(ID) >= 2:
+    #             if out[1] == 'mhd':
+    #                 image = mhd.read(os.path.join(datadir, ID))[0]
+    #                 vmask = mhd.read(os.path.join(labeldir, ID[:-9] + 'label.mhd'))[0]
+    #                 data = {}
+    #                 data['x'] = np.expand_dims((image / 255.0).astype(np.float32), 0)
+    #                 data['y'] = np.expand_dims(vmask, 0)
+    #                 dataset[ID] = data
+    # all_IDs = sorted(dataset.keys())
+    # if os.path.isfile(ID):
+    #     out = ID.split('.')
+    #     if len(ID) >=2:
+    #         if out[1] == 'mhd':
+    #             datalist = {key: [ID for ID in datalist[key] if ID in all_IDs] for key in datalist.keys()}
+    # optimizer.zero_grad()
+    # dataset = torch.Tensor(datalist)
+    # out = net(datalist)
+    # loss = criterion(out,datalist)
+    # loss.backward(retain_graph=True)
+    # print("epoch = {}, loss = {:.5f}".format(ID+1,loss.data))
+    # optimizer.step()
         ###################################################################
 
 
