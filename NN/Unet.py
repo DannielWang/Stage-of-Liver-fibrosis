@@ -143,50 +143,51 @@ if __name__ == '__main__':
     datalist = load_json('phase_liverfibrosis.json')
     # groups = split_dataset(datalist, 2)
     dataset = {}
-    y_shape = [512, 512]
-    Image_shape = [512, 512]
-    n_classes = 4
+    # n_classes = 4
     ship_train_dataset = Dataset.ShipDataset(datadir, labeldir, augment=None)
     ship_train_loader = DataLoader(ship_train_dataset, batch_size=16, num_workers=4, shuffle=True)
-    if torch.cuda.is_available():
-        net.cuda()
-        criterion.cuda()
+    # if torch.cuda.is_available():
+    #     net.cuda()
+    #     criterion.cuda()
+
+    out = iter(ship_train_loader).__next__()
+
 
     for ID in tqdm.tqdm(os.listdir(datadir), desc='Loading images'):
         for epochs in range(4):
             loss = []
             ERROR_Train = []
             net.train()
-            for image, labels in enumerate(ship_train_dataset, 0):
+            for i, (image,labels) in enumerate(ship_train_loader):
                 optimizer.zero_grad()
-                real_cpu, label_cpu = ship_train_dataset.images, ship_train_dataset.labels
-                if torch.cuda.is_available():
-                    real_cpu = real_cpu.cuda()
-                    label_cpu = label_cpu.cuda()
+                # real_cpu, label_cpu = ship_train_dataset.images, ship_train_dataset.labels
+                # if torch.cuda.is_available():
+                # real_cpu = real_cpu.cuda()
+                # label_cpu = label_cpu.cuda()
 
-                    inputs = real_cpu
-                    labels = label_cpu
+                # inputs = real_cpu
+                # labels = label_cpu
 
-                    # inputv = Variable(input)
-                    # labelv = Variable(label)
+                # inputv = Variable(input)
+                # labelv = Variable(label)
+                image = torch.Tensor(image)
+                output = net(image)
 
-                    output = net(input)
+                loss = criterion(output, labels)
+                loss.backward(retain_graph=True)
+                print("epoch = {}, loss = {:.5f}".format(ID + 1, loss.data))
+                optimizer.step()
 
-                    loss = criterion(output, labels)
-                    loss.backward(retain_graph=True)
-                    print("epoch = {}, loss = {:.5f}".format(ID + 1, loss.data))
-                    optimizer.step()
-
-                    running_loss += loss.item()
-                    if epochs % 2000 == 1999:
-                        print('[%d,%5d] loss: %.3f' % (epochs + 1, image + 1, running_loss / 2000))
-                        running_loss = 0.0
-                    print('Finished Training')
-                    # train_IDs = [ID for ID in dataset.keys() if ID not in test_IDs]
-                    outputs = np.concatenate([dataset[ID]['x'] for ID in output])
-                    labels = np.concatenate([dataset[ID]['y'] for ID in labels])
-                    epochs = 4
-                    outputs.fit(outputs, labels, batch_size=4, epochs=epochs)
+                running_loss += loss.item()
+                if epochs % 2000 == 1999:
+                    print('[%d,%5d] loss: %.3f' % (epochs + 1, image + 1, running_loss / 2000))
+                    running_loss = 0.0
+                print('Finished Training')
+                # train_IDs = [ID for ID in dataset.keys() if ID not in test_IDs]
+                outputs = np.concatenate([dataset[ID]['x'] for ID in output])
+                labels = np.concatenate([dataset[ID]['y'] for ID in labels])
+                # epochs = 4
+                # outputs.fit(outputs, labels, batch_size=4, epochs=epochs)
 
         # if os.path.isfile(datadir + '\\' + ID):
         #     out = ID.split('.')
