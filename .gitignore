@@ -4,3 +4,5 @@ FLVA042_image.mhd
 FLVA042_image.zraw
 FLVA044_image.mhd
 FLVA044_image.zraw
+Utils/
+Function/Predict.py
