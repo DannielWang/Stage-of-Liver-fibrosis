@@ -4,6 +4,7 @@ import os
 import torch
 from skimage import io, transform
 import SimpleITK as sitk
+import tqdm
 
 
 class ShipDataset(Dataset):
@@ -17,10 +18,19 @@ class ShipDataset(Dataset):
 
         self.images = []
         self.labels = []
-        for i in range(len(self.image_paths)):
+
+        for i in tqdm.tqdm(range(len(self.image_paths)), desc='Loading images'):
+        # for i in tqdm.tqdm(os.listdir(self.image_paths), desc='Loading images'):
+        #     if os.path.isfile(self.image_paths + '\\' + i):
+        #         out = i.split('.')
+        #         if len(i) >= 2:
+        #             if out[1] == 'mhd':
             image = sitk.ReadImage(self.image_paths[i])
             label = sitk.ReadImage(self.label_paths[i])
             image = sitk.GetArrayFromImage(image)
+            label = sitk.GetArrayFromImage(label)
+            image = torch.Tensor(image)
+            label = torch.Tensor(label)
             for j in range(image.shape[0]):
                 self.images.append(image[j])
                 self.labels.append(label[j])

@@ -103,13 +103,14 @@ def refine_labels(labels):
     return refined
 
 
-def save_object(obj, filename):
-    if os.path.splitext(filename)[1] == '.json':
-        with open(filename, 'w') as f:
-            json.dump(obj, f, indent=2)
-    else:
-        with open(filename, 'wb') as f:
-            pickle.dump(obj, f)
+#
+# def save_object(obj, filename):
+#     if os.path.splitext(filename)[1] == '.json':
+#         with open(filename, 'w') as f:
+#             json.dump(obj, f, indent=2)
+#     else:
+#         with open(filename, 'wb') as f:
+#             pickle.dump(obj, f)
 
 
 def load_json(filename):
@@ -144,38 +145,40 @@ if __name__ == '__main__':
     # groups = split_dataset(datalist, 2)
     dataset = {}
     # n_classes = 4
+
     ship_train_dataset = Dataset.ShipDataset(datadir, labeldir, augment=None)
-    ship_train_loader = DataLoader(ship_train_dataset, batch_size=16, num_workers=4, shuffle=True)
-    # if torch.cuda.is_available():
-    #     net.cuda()
-    #     criterion.cuda()
+    ship_train_loader = DataLoader(ship_train_dataset, batch_size=4, num_workers=4, shuffle=True)
+    if torch.cuda.is_available():
+        net.cuda()
+        criterion.cuda()
 
-    out = iter(ship_train_loader).__next__()
+    # out = iter(ship_train_loader).__next__()
 
+    for epochs in range(4):
+        loss = []
+        ERROR_Train = []
+        net.train()
+        for i, (image, labels) in enumerate(ship_train_loader):
+            optimizer.zero_grad()
+            real_cpu = torch.Tensor(image)
+            label_cpu = torch.Tensor(labels)
+            if torch.cuda.is_available():
+                real_cpu = real_cpu.cuda()
+                label_cpu = label_cpu.cuda()
 
-    for ID in tqdm.tqdm(os.listdir(datadir), desc='Loading images'):
-        for epochs in range(4):
-            loss = []
-            ERROR_Train = []
-            net.train()
-            for i, (image,labels) in enumerate(ship_train_loader):
-                optimizer.zero_grad()
-                # real_cpu, label_cpu = ship_train_dataset.images, ship_train_dataset.labels
-                # if torch.cuda.is_available():
-                # real_cpu = real_cpu.cuda()
-                # label_cpu = label_cpu.cuda()
-
-                # inputs = real_cpu
-                # labels = label_cpu
+                inputs = real_cpu
+                labels = label_cpu
 
                 # inputv = Variable(input)
                 # labelv = Variable(label)
-                image = torch.Tensor(image)
-                output = net(image)
+                inputs = torch.Tensor(inputs).astype(torch.FloatType)
+                labels = torch.Tensor(labels).astype(torch.FloatType)
+                # image = image.unsqueeze(1)
+                output = net(inputs)
 
                 loss = criterion(output, labels)
                 loss.backward(retain_graph=True)
-                print("epoch = {}, loss = {:.5f}".format(ID + 1, loss.data))
+                print("epoch = {}, loss = {:.5f}".format(i + 1, loss.data))
                 optimizer.step()
 
                 running_loss += loss.item()
@@ -193,12 +196,12 @@ if __name__ == '__main__':
         #     out = ID.split('.')
         #     if len(ID) >= 2:
         #         if out[1] == 'mhd':
-                    # image = mhd.read(os.path.join(datadir, ID))[0]
-                    # vmask = mhd.read(os.path.join(labeldir, ID[:-9] + 'label.mhd'))[0]
-                    # data = {}
-                    # data['x'] = np.expand_dims((image / 255.0).astype(np.float32), 0)
-                    # data['y'] = np.expand_dims(vmask, 0)
-                    # n_classes = max(n_classes, np.max(vmask) + 1)
+        # image = mhd.read(os.path.join(datadir, ID))[0]
+        # vmask = mhd.read(os.path.join(labeldir, ID[:-9] + 'label.mhd'))[0]
+        # data = {}
+        # data['x'] = np.expand_dims((image / 255.0).astype(np.float32), 0)
+        # data['y'] = np.expand_dims(vmask, 0)
+        # n_classes = max(n_classes, np.max(vmask) + 1)
 
     # result_basedir = 'unet_train_' + datetime.today().strftime("%y%m%d_%H%M%S")
     # os.makedirs(result_basedir, exist_ok=True)
@@ -207,9 +210,6 @@ if __name__ == '__main__':
     #
     # all_IDs = sorted(dataset.keys())
     # datalist = {key: [ID for ID in datalist[key] if ID in all_IDs] for key in datalist.keys()}
-
-
-
 
     # k_fold = 2
     # for exp_no in range(1):

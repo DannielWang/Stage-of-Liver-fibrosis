@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.cuda
 
 
 class Contract(nn.Module):
@@ -15,7 +16,7 @@ class Contract(nn.Module):
         out = self.conv1(x)
         out = F.relu(out, inplace=False)
         out = self.normalization(out)
-        out = self.conv2(out)
+        out = self.conv2(out).cuda()
         out = F.relu(out, inplace=False)
         out = self.normalization(out)
         return out
