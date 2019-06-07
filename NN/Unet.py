@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.autograd import Variable
+
 from Layer import ContractU2d
 from Layer import ExpandU2d
 import os
@@ -15,6 +17,7 @@ from datetime import datetime
 from Function import Dataset
 from torch.utils.data import DataLoader
 import torch.cuda
+from scipy import ndimage
 import sys, shutil
 
 
@@ -55,6 +58,7 @@ class Unet(nn.Module):
         out = self.contract4(out)
         left_tensor4 = out
         out = self.max_pool(out)
+        out = self.contract5(out)
         # Upsampling operation
         out = self.expand1(out, left_tensor4)
         out = self.expand2(out, left_tensor3)
@@ -64,6 +68,12 @@ class Unet(nn.Module):
         out = self.conv(out)
 
         return F.softmax(out)
+
+
+def downsample(img, size):
+    down_img = ndimage.interpolation.zoom(img, (1, size / img.shape[1], size / img.shape[2]))
+
+    return down_img
 
 
 def JaccardIndex(a, b):
@@ -147,7 +157,10 @@ if __name__ == '__main__':
     # n_classes = 4
 
     ship_train_dataset = Dataset.ShipDataset(datadir, labeldir, augment=None)
-    ship_train_loader = DataLoader(ship_train_dataset, batch_size=4, num_workers=4, shuffle=True)
+    ship_train_loader = DataLoader(ship_train_dataset, batch_size=1, num_workers=4, shuffle=True)
+    size = 256
+
+    img = downsample(img[(mid_slice - interval):(mid_slice + interval) + 1, ], size)
     if torch.cuda.is_available():
         net.cuda()
         criterion.cuda()
@@ -169,14 +182,13 @@ if __name__ == '__main__':
                 inputs = real_cpu
                 labels = label_cpu
 
-                # inputv = Variable(input)
-                # labelv = Variable(label)
-                inputs = torch.Tensor(inputs).astype(torch.FloatType)
-                labels = torch.Tensor(labels).astype(torch.FloatType)
-                # image = image.unsqueeze(1)
-                output = net(inputs)
+                inputv = Variable(inputs)
+                labelv = Variable(labels)
+                inputv = inputv.unsqueeze(1)
+                labelv = labelv.unsqueeze(1)
+                output = net(inputv)
 
-                loss = criterion(output, labels)
+                loss = criterion(output, labelv)
                 loss.backward(retain_graph=True)
                 print("epoch = {}, loss = {:.5f}".format(i + 1, loss.data))
                 optimizer.step()
