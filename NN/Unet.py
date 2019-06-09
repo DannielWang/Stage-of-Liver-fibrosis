@@ -26,10 +26,6 @@ class Unet(nn.Module):
         super(Unet, self).__init__()
 
         kernel_size = 3
-        # define the module object of each layer
-        # self.conv = nn.Conv3d(1, 3, kernel_size)
-        # self.conv1 = nn.Conv3d(3, 32, kernel_size)
-        # self.conv2 = nn.Conv3d(32, 64, kernel_size)
         self.contract1 = ContractU2d.Contract(1, 64, kernel_size)
         self.contract2 = ContractU2d.Contract(64, 128, kernel_size)
         self.contract3 = ContractU2d.Contract(128, 256, kernel_size)
@@ -158,9 +154,9 @@ if __name__ == '__main__':
 
     ship_train_dataset = Dataset.ShipDataset(datadir, labeldir, augment=None)
     ship_train_loader = DataLoader(ship_train_dataset, batch_size=1, num_workers=4, shuffle=True)
-    size = 256
+    imgsize = 256
+    labelsize= 68
 
-    img = downsample(img[(mid_slice - interval):(mid_slice + interval) + 1, ], size)
     if torch.cuda.is_available():
         net.cuda()
         criterion.cuda()
@@ -168,13 +164,14 @@ if __name__ == '__main__':
     # out = iter(ship_train_loader).__next__()
 
     for epochs in range(4):
+        running_loss = 0.0
         loss = []
         ERROR_Train = []
         net.train()
         for i, (image, labels) in enumerate(ship_train_loader):
             optimizer.zero_grad()
-            real_cpu = torch.Tensor(image)
-            label_cpu = torch.Tensor(labels)
+            real_cpu = torch.Tensor(downsample(image, imgsize))
+            label_cpu = torch.Tensor(downsample(labels, labelsize))
             if torch.cuda.is_available():
                 real_cpu = real_cpu.cuda()
                 label_cpu = label_cpu.cuda()
@@ -190,17 +187,16 @@ if __name__ == '__main__':
 
                 loss = criterion(output, labelv)
                 loss.backward(retain_graph=True)
-                print("epoch = {}, loss = {:.5f}".format(i + 1, loss.data))
+                print("epoch = {}, loss = {:.5f}".format(epochs + 1, loss.data))
                 optimizer.step()
 
                 running_loss += loss.item()
-                if epochs % 2000 == 1999:
-                    print('[%d,%5d] loss: %.3f' % (epochs + 1, image + 1, running_loss / 2000))
+                if i % 2000 == 1999:
+                    print('[%d,%5d] loss: %.3f' % (epochs + 1, i + 1, running_loss / 2000))
                     running_loss = 0.0
-                print('Finished Training')
                 # train_IDs = [ID for ID in dataset.keys() if ID not in test_IDs]
-                outputs = np.concatenate([dataset[ID]['x'] for ID in output])
-                labels = np.concatenate([dataset[ID]['y'] for ID in labels])
+                # outputs = np.concatenate([dataset[ID]['x'] for ID in output])
+                # labels = np.concatenate([dataset[ID]['y'] for ID in labels])
                 # epochs = 4
                 # outputs.fit(outputs, labels, batch_size=4, epochs=epochs)
 
