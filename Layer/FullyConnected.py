@@ -16,5 +16,5 @@ class Fullyconnected(nn.Module):
         out = self.fc2(out)
         out = F.relu(out, inplace=False)
         out = self.fc3(out)
-        out = F.log_softmax(out)
+        out = F.log_softmax(out, dim=1)
         return out

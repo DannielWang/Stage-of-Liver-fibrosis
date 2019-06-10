@@ -1,13 +1,15 @@
+import cv2
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.cuda as cuda
+import torch.optim as optim
+from torch.utils.data import DataLoader
 from torch.autograd import Variable
-
 from Layer import ContractU2d
 from Layer import ExpandU2d
 import os
 import numpy as np
-import torch.optim as optim
 import mhd
 import json
 import pickle
@@ -15,11 +17,11 @@ import tqdm
 from skimage import measure
 from datetime import datetime
 from Function import Dataset
-from torch.utils.data import DataLoader
-import torch.cuda
 from scipy import ndimage
-import sys, shutil
-import torch.cuda as cuda
+from scipy import misc
+import sys
+import shutil
+
 
 
 class Unet(nn.Module):
@@ -64,7 +66,7 @@ class Unet(nn.Module):
         out = self.expand4(out, left_tensor1)
         out = self.conv(out)
 
-        return F.softmax(out)
+        return F.softmax(out, dim=1)
 
 
 def downsample(img, size):
@@ -92,6 +94,23 @@ def evaluate(label1, label2):
         DCs.append(DiceCoeff(a, b))
     return JIs, DCs
 
+def predict(self, x, axis=0, params=None):
+
+    if params is None:
+        params = self.params
+    assert params is not None
+    if len(params) != 2:
+        raise ValueError('Parameters are defined by 2 sets.')
+
+    origin, direction = params
+
+    if direction[axis] == 0:
+        # line parallel to axis
+        raise ValueError('Line parallel to axis %s' % axis)
+
+    l = (x - origin[axis]) / direction[axis]
+    data = origin + l[..., np.newaxis] * direction
+    return data
 
 def largest_CC(image, n=1):
     labels = measure.label(image, connectivity=3, background=0)
@@ -143,7 +162,7 @@ if __name__ == '__main__':
     ########################################################
     net = Unet()
     criterion = nn.MSELoss()
-    optimizer = optim.Adam(net.parameters(), lr=0.0001, betas=(0.9, 0.999), weight_decay=0.004)
+    optimizer = optim.Adam(net.parameters(), lr=0.00015, betas=(0.9, 0.999), weight_decay=0.004)
     # scheduler = optim.lr_shcduker.ExponentialLR(optimizer, gamma=0.997)
     datadir = '../dataset/Cases/Images'
     labeldir = '../dataset/Cases/Labels'
@@ -151,16 +170,16 @@ if __name__ == '__main__':
     # groups = split_dataset(datalist, 2)
     dataset = {}
     # n_classes = 4
-    for ID in tqdm.tqdm(os.listdir(datadir),desc='Loading images'):
+    for ID in tqdm.tqdm(os.listdir(datadir), desc='Loading images'):
         if os.path.isfile(datadir + '\\' + ID):
             out = ID.split('.')
             if len(ID) >= 2:
                 if out[1] == 'mhd':
-                    original = mhd.read(os.path.join(datadir,ID))[0]
-                    label = mhd.read(os.path.join(labeldir,ID[:-9] + 'label.mhd'))[0]
+                    original = mhd.read(os.path.join(datadir, ID))[0]
+                    label = mhd.read(os.path.join(labeldir, ID[:-9] + 'label.mhd'))[0]
                     data = {}
-                    data['x'] = np.expand_dims((original/255.0).astype(np.float32),-1)
-                    data['y'] = np.expand_dims(label,-1)
+                    data['x'] = np.expand_dims((original / 255.0).astype(np.float32), -1)
+                    data['y'] = np.expand_dims(label, -1)
                     dataset[ID] = data
         # n_classes = max(n_classes, np.max(label) + 1)
 
@@ -197,6 +216,7 @@ if __name__ == '__main__':
         for i, (image, labels) in enumerate(ship_train_loader):
             result_dir = os.path.join(exp_dir, 'g{0}'.format(i))
             os.makedirs(result_dir, exist_ok=True)
+
             optimizer.zero_grad()
             real_cpu = torch.Tensor(downsample(image, imgsize))
             label_cpu = torch.Tensor(downsample(labels, labelsize))
@@ -224,117 +244,34 @@ if __name__ == '__main__':
                     running_loss = 0.0
 
                 # save model
-                with open(os.path.join(result_dir, 'unet_model.json'), 'w') as f:
-                    f.write(net.to_json())
-                net.save_weights(os.path.join(result_dir, 'unet_model_weights.h5'))
-                for test_ID in tqdm.tqdm((image,labels), desc='Testing'):
-                    x_test = dataset[test_ID]['x']
-                    predict_y = net.predict(x_test, batch_size=1, verbose=False)
-                    predict_label = np.argmax(predict_y, axis=3).astype(np.uint8)
-                    mhd.write(os.path.join(result_img_dir, test_ID + '.mhd'), predict_label)
+                # with open(os.path.join(result_dir, 'unet_model.json'), 'w') as f:
+                #     f.write(net.to_json())
+                net.state_dict()
+                torch.save(net, os.path.join(result_dir, 'unet_model_weights.h5'))
 
-                    JIs[test_ID], DCs[test_ID] = evaluate(predict_label, np.squeeze(dataset[test_ID]['y']))
-                    refined = refine_labels(predict_label)
-                    mhd.write(os.path.join(result_img_dir, 'refined_' + test_ID + '.mhd'), refined)
-                    refined_JIs[test_ID], refined_DCs[test_ID] = evaluate(refined, np.squeeze(dataset[test_ID]['y']))
+                for i, test_IDs in enumerate(groups):
+                    for i in range(len(test_IDs)):
+                        # filename = result_img_dir + 'ikeda_%d.mhd' % i
+                        refined = Variable(torch.Tensor(output.cpu()), requires_grad = True)
+                        refined = refined.detach().numpy()
+                        # misc.toimage(refined, cmin=0.0, cmax=...).save(filename)  # save img
+                        img_mask = np.array(refined) * 255  ##img_mask is Binary Image
+                        img_mask = cv2.merge(img_mask)
+                        cv2.imwrite(result_img_dir + 'ikeda_%d.mhd' % i , img_mask)
 
-            np.savetxt(os.path.join(exp_dir, 'refined_JI.csv'), np.stack([refined_JIs[ID] for ID in all_IDs]),
-                       delimiter=",", fmt='%g')
-            np.savetxt(os.path.join(exp_dir, 'refined_Dice.csv'), np.stack([refined_DCs[ID] for ID in all_IDs]),
-                       delimiter=",", fmt='%g')
-                # train_IDs = [ID for ID in dataset.keys() if ID not in test_IDs]
-                # outputs = np.concatenate([dataset[ID]['x'] for ID in output])
-                # labels = np.concatenate([dataset[ID]['y'] for ID in labels])
-                # epochs = 4
-                # outputs.fit(outputs, labels, batch_size=4, epochs=epochs)
+                #     train_ID = [ID for ID in dataset.keys()]
+                # for test_ID in tqdm.tqdm(train_ID, desc='Testing'):
+                #     x_test = np.fromstring(dataset[test_ID]['x'])
+                #     predict_y = predict(self=None,x=x_test)
+                #     predict_label = np.argmax(predict_y, axis=3).astype(np.uint8)
+                #     mhd.write(os.path.join(result_img_dir, test_IDs + '.mhd'), predict_label)
 
-        # if os.path.isfile(datadir + '\\' + ID):
-        #     out = ID.split('.')
-        #     if len(ID) >= 2:
-        #         if out[1] == 'mhd':
-        # image = mhd.read(os.path.join(datadir, ID))[0]
-        # vmask = mhd.read(os.path.join(labeldir, ID[:-9] + 'label.mhd'))[0]
-        # data = {}
-        # data['x'] = np.expand_dims((image / 255.0).astype(np.float32), 0)
-        # data['y'] = np.expand_dims(vmask, 0)
-        # n_classes = max(n_classes, np.max(vmask) + 1)
+                    # JIs[test_IDs], DCs[test_IDs] = evaluate(predict_label, np.squeeze(dataset[test_IDs]['y']))
+                    # refined = refine_labels(predict_label)
+                    # mhd.write(os.path.join(result_img_dir, 'refined_' + test_IDs + '.mhd'), refined)
+                    # refined_JIs[test_IDs], refined_DCs[test_IDs] = evaluate(refined, np.squeeze(dataset[test_IDs]['y']))
 
-    # all_IDs = sorted(dataset.keys())
-    # datalist = {key: [ID for ID in datalist[key] if ID in all_IDs] for key in datalist.keys()}
-
-    # k_fold = 2
-    # for exp_no in range(1):
-    #     groups = split_dataset(datalist, k_fold)
-    exp_dir = os.path.join(result_basedir, 'exp{0}'.format(epochs))
-    os.makedirs(exp_dir, exist_ok=True)
-    result_img_dir = os.path.join(exp_dir, 'img')
-    os.makedirs(result_img_dir, exist_ok=True)
-    #     save_object([g for g in groups], os.path.join(exp_dir, 'groups.json'))
-    #     JIs, DCs = {}, {}
-    #     refined_JIs, refined_DCs = {}, {}
-    #     print('pre_groups')
-    #     print(groups)
-    #     for group_no, test_IDs in enumerate(groups):
-    #         result_dir = os.path.join(exp_dir, 'g{0}'.format(group_no))
-    #         os.makedirs(result_dir, exist_ok=True)
-    #         # model = create_model([128, 128, 1], n_classes)
-    #         # opt = keras.optimizers.Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=1e-3)
-    #         # model.compile(opt, 'sparse_categorical_crossentropy')
-    #         # es = keras.callbacks.EarlyStopping(monitor='loss', patience=1, verbose=1, mode='auto')
-    #         print('groups')
-    #         print(groups)
-    #         print('test_IDs')
-    #         print(test_IDs)
-    #         inputs = test_IDs
-    #         labels = test_IDs
-    #
-    #         optimizer.zero_grad()
-    #         inputs = torch.Tensor(inputs)
-    #         labels = torch.Tensor(labels)
-    #         print('inputs')
-    #         print(inputs.shape)
-    #         print('labels')
-    #         print(labels.shape)
-    #         outputs = net(inputs)
-    #
-    #         loss = criterion(outputs, labels)
-    #         loss.backward(retain_graph=True)
-    #         print("epoch = {}, loss = {:.5f}".format(ID + 1, loss.data))
-    #         optimizer.step()
-    #
-    #         running_loss += loss.item()
-    #         if group_no % 2000 == 1999:
-    #             print('[%d,%5d] loss: %.3f' % (exp_no + 1, group_no + 1, running_loss / 2000))
-    #             running_loss = 0.0
-    #         print('Finished Training')
-    #         train_IDs = [ID for ID in dataset.keys() if ID not in test_IDs]
-    #         x_train = np.concatenate([dataset[ID]['x'] for ID in train_IDs])
-    #         y_train = np.concatenate([dataset[ID]['y'] for ID in train_IDs])
-    #         print('test', test_IDs)
-    #         print('train', train_IDs)
-    #         epochs = 4
-    #         outputs.fit(x_train, y_train, batch_size=4, epochs=epochs)
-    #
-    # # save model
-    # with open(os.path.join(result_dir, 'unet_model.json'), 'w') as f:
-    #     f.write(outputs.to_json())
-    # outputs.save_weights(os.path.join(result_dir, 'unet_model_weights.h5'))
-    #
-    # for test_ID in tqdm.tqdm(test_IDs, desc='Testing'):
-    #     x_test = dataset[test_ID]['x']
-    #     predict_y = outputs.predict(x_test, batch_size=4, verbose=False)
-    #
-    #     predict_label = np.argmax(predict_y, axis=3).astype(np.uint8)
-    #     mhd.write(os.path.join(result_img_dir, test_ID + '.mha'), predict_label)
-    #
-    #     JIs[test_ID], DCs[test_ID] = evaluate(predict_label, np.squeeze(dataset[test_ID]['y']))
-    #     refined = refine_labels(predict_label)
-    #     mhd.write(os.path.join(result_img_dir, 'refined_' + test_ID + '.mha'), refined)
-    #     refined_JIs[test_ID], refined_DCs[test_ID] = evaluate(refined, np.squeeze(dataset[test_ID]['y']))
-    #
-    # np.savetxt(os.path.join(exp_dir, 'JI.csv'), np.stack([JIs[ID] for ID in all_IDs]), delimiter=",", fmt='%g')
-    # np.savetxt(os.path.join(exp_dir, 'Dice.csv'), np.stack([DCs[ID] for ID in all_IDs]), delimiter=",", fmt='%g')
-    # np.savetxt(os.path.join(exp_dir, 'refined_JI.csv'), np.stack([refined_JIs[ID] for ID in all_IDs]), delimiter=",",
-    #            fmt='%g')
-    # np.savetxt(os.path.join(exp_dir, 'refined_Dice.csv'), np.stack([refined_DCs[ID] for ID in all_IDs]), delimiter=",",
-    #            fmt='%g')
+            # np.savetxt(os.path.join(exp_dir, 'refined_JI.csv'), np.stack([refined_JIs[ID] for ID in all_IDs]),
+            #            delimiter=",", fmt='%g')
+            # np.savetxt(os.path.join(exp_dir, 'refined_Dice.csv'), np.stack([refined_DCs[ID] for ID in all_IDs]),
+            #            delimiter=",", fmt='%g')

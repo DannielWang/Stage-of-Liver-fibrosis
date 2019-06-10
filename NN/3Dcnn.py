@@ -12,7 +12,7 @@ class CNN(nn.Module):
     def __init__(self, kernel_size=7):
         super(CNN, self).__init__()
 
-        self.conv1 = nn.Conv3d(1, 8, kernel_size)
+        self.conv1 = nn.Conv3d(2, 8, kernel_size)
         self.conv2 = nn.Conv3d(8, 16, kernel_size)
         self.conv3 = nn.Conv3d(16, 32, kernel_size)
         self.conv4 = nn.Conv3d(32, 64, kernel_size)

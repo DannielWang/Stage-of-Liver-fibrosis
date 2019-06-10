@@ -2,7 +2,6 @@ from torch.utils.data import Dataset
 import numpy as np
 import os
 import torch
-from skimage import io, transform
 import SimpleITK as sitk
 import tqdm
 
