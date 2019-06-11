@@ -1,3 +1,5 @@
+# matplotlib inline
+# config InlineBackend.figure_format = 'retina'
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -7,18 +9,19 @@ from torch.utils.data import DataLoader
 from torch.autograd import Variable
 from Layer import ContractU2d
 from Layer import ExpandU2d
+from Layer import FullyConnected
 import os
 import numpy as np
-import mhd
 import json
 import pickle
-import tqdm
 from skimage import measure
 from datetime import datetime
 from Function import Dataset
 from scipy import ndimage
 import sys
 import shutil
+import matplotlib.pyplot as plt
+from torchvision import datasets, transforms, models
 
 
 class Unet(nn.Module):
@@ -41,7 +44,18 @@ class Unet(nn.Module):
         self.dropout = nn.Dropout2d(0.25, inplace=False)
         self.conv = nn.Conv2d(64, 2, kernel_size=1)
 
+        # 3D CNN
+        self.conv1 = nn.Conv3d(2, 8, kernel_size)
+        self.conv2 = nn.Conv3d(8, 16, kernel_size)
+        self.conv3 = nn.Conv3d(16, 32, kernel_size)
+        self.conv4 = nn.Conv3d(32, 64, kernel_size)
+        self.conv5 = nn.Conv3d(64, 128, kernel_size)
+        self.max_pool1 = nn.MaxPool3d(2)
+        self.max_pool2 = nn.MaxPool3d(3)
+        self.fcl = FullyConnected.Fullyconnected(9248,1000,300)
+
     def forward(self, x):
+        # Unet
         # Convolution operation
         out = self.contract1(x)
         # Store the tensor of each convoluted layer
@@ -65,57 +79,24 @@ class Unet(nn.Module):
         out = self.expand4(out, left_tensor1)
         out = self.conv(out)
 
-        return F.softmax(out, dim=1)
+        # 3D CNN
+        out = self.conv1(out)
+        out = F.relu(out)
+        out = self.conv2(out)
+        out = F.relu(out)
+        out = self.conv3(out)
+        out = F.relu(out)
+        out = self.conv4(out)
+        out = F.relu(out)
+        out = self.fcl(out)
+
+        return out
 
 
 def downsample(img, size):
     down_img = ndimage.interpolation.zoom(img, (1, size / img.shape[1], size / img.shape[2]))
 
     return down_img
-
-
-def resizesample(img, size):
-    down_img = ndimage.interpolation.zoom(img, (2, size / img.shape[1], size / img.shape[2]))
-
-    return down_img
-
-
-def JaccardIndex(a, b):
-    return np.sum(a & b) / np.sum(a | b)
-
-
-def DiceCoeff(a, b):
-    return 2 * np.sum(a & b) / (np.sum(a) + np.sum(b))
-
-
-def evaluate(label1, label2):
-    max_label = max(np.max(label1), np.max(label2))
-    JIs = []
-    DCs = []
-    for i in range(1, int(max_label) + 1):
-        a = label1 == i
-        b = label2 == i
-        JIs.append(JaccardIndex(a, b))
-        DCs.append(DiceCoeff(a, b))
-    return JIs, DCs
-
-
-def predict(self, x, axis=0, params=None):
-    if params is None:
-        params = self.params
-    assert params is not None
-    if len(params) != 2:
-        raise ValueError('Parameters are defined by 2 sets.')
-
-    origin, direction = params
-
-    if direction[axis] == 0:
-        # line parallel to axis
-        raise ValueError('Line parallel to axis %s' % axis)
-
-    l = (x - origin[axis]) / direction[axis]
-    data = origin + l[..., np.newaxis] * direction
-    return data
 
 
 def largest_CC(image, n=1):
@@ -168,29 +149,14 @@ if __name__ == '__main__':
     ########################################################
     net = Unet()
     criterion = nn.MSELoss()
-    optimizer = optim.Adam(net.parameters(), lr=0.0003, betas=(0.9, 0.999), weight_decay=0.004)
-    # scheduler = optim.lr_shcduker.ExponentialLR(optimizer, gamma=0.997)
+    optimizer = optim.Adam(net.parameters(), lr=0.00015, betas=(0.9, 0.999), weight_decay=0.004)
     datadir = '../dataset/Cases/Images'
     labeldir = '../dataset/Cases/Labels'
     datalist = load_json('phase_liverfibrosis.json')
-    # groups = split_dataset(datalist, 2)
     dataset = {}
-    # n_classes = 4
-    for ID in tqdm.tqdm(os.listdir(datadir), desc='Loading images'):
-        if os.path.isfile(datadir + '\\' + ID):
-            out = ID.split('.')
-            if len(ID) >= 2:
-                if out[1] == 'mhd':
-                    original = mhd.read(os.path.join(datadir, ID))[0]
-                    label = mhd.read(os.path.join(labeldir, ID[:-9] + 'label.mhd'))[0]
-                    data = {}
-                    data['x'] = np.expand_dims((original / 255.0).astype(np.float32), -1)
-                    data['y'] = np.expand_dims(label, -1)
-                    dataset[ID] = data
-        # n_classes = max(n_classes, np.max(label) + 1)
 
-    ship_train_dataset = Dataset.ShipDataset(datadir, labeldir, augment=None)
-    ship_train_loader = DataLoader(ship_train_dataset, batch_size=1, num_workers=0, shuffle=True)
+    trainloader, testloader = Dataset.ShipDataset(datadir, labeldir, augment=None)
+    ship_train_loader = DataLoader(trainloader, batch_size=1, num_workers=4, shuffle=True)
     imgsize = 256
     labelsize = 68
 
@@ -198,17 +164,21 @@ if __name__ == '__main__':
         net.cuda()
         criterion.cuda()
 
-    result_basedir = 'unet_train_' + datetime.today().strftime("%y%m%d_%H%M%S")
+    result_basedir = 'train_' + datetime.today().strftime("%y%m%d_%H%M%S")
     os.makedirs(result_basedir, exist_ok=True)
     shutil.copyfile(sys.argv[0], os.path.join(result_basedir, os.path.basename(sys.argv[0])))  # copy this script
 
     all_IDs = sorted(dataset.keys())
 
     #
+    epochs = 1
+    steps = 0
+    print_every = 10
+    train_losses, test_losses = [], []
     k_fold = 2
-    for epochs in range(4):
+    for epoch in range(epochs):
         groups = split_dataset(datalist, k_fold)
-        exp_dir = os.path.join(result_basedir, 'exp{0}'.format(epochs))
+        exp_dir = os.path.join(result_basedir, 'exp{0}'.format(epoch))
         os.makedirs(exp_dir, exist_ok=True)
         result_img_dir = os.path.join(exp_dir, 'img')
         os.makedirs(result_img_dir, exist_ok=True)
@@ -219,7 +189,8 @@ if __name__ == '__main__':
         JIs, DCs = {}, {}
         refined_JIs, refined_DCs = {}, {}
         net.train()
-        for i, (image, labels) in enumerate(ship_train_loader):
+        for i, (image, labels) in enumerate(trainloader):
+            steps += 1
             optimizer.zero_grad()
             real_cpu = torch.Tensor(downsample(image, imgsize))
             label_cpu = torch.Tensor(downsample(labels, labelsize))
@@ -238,33 +209,37 @@ if __name__ == '__main__':
 
                 loss = criterion(output, labelv)
                 loss.backward(retain_graph=True)
-                print("epoch = {}, loss = {:.5f}".format(epochs + 1, loss.data))
+                print("epoch = {}, loss = {:.5f}".format(epoch + 1, loss.data))
                 optimizer.step()
                 out = output.data.cpu()
                 running_loss += loss.item()
-                if i % 2000 == 1999:
-                    print('[%d,%5d] loss: %.3f' % (epochs + 1, i + 1, running_loss / 2000))
-                    running_loss = 0.0
+                if steps % print_every == 0:
+                    test_losses = 0
+                    accuracy = 0
+                    net.eval()
+                    with torch.no_grad():
+                        for image, labels in testloader:
+                            image, labels = image.cuda(), labels.cuda()
+                            logps = Unet(image)
+                            batch_loss = criterion(logps, labels)
+                            test_losses += batch_loss.item()
 
-    result_dir = os.path.join(exp_dir, 'g{0}'.format(epochs))
+                            ps = torch.exp(logps)
+                            top_p, top_class = ps.topk(1, dim=1)
+                            equals = top_class == labels.view(*top_class.shape)
+                            accuracy += torch.mean(equals.type(torch.FloatTensor)).item()
+                            train_losses.append(running_loss / len(trainloader))
+                            test_losses.append(test_losses / len(testloader))
+                            print(f"Epoch {epoch+1}/{epochs}.. "
+                  f"Train loss: {running_loss/print_every:.3f}.. "
+                  f"Test loss: {test_loss/len(testloader):.3f}.. "
+                  f"Test accuracy: {accuracy/len(testloader):.3f}")
+                            running_loss = 0.0
+                            net.train()
+    torch.save(net, 'train.pth')
+    plt.plot(train_losses, label='Training loss')
+    plt.plot(test_losses, label='Validation loss')
+    plt.legend(frameon=False)
+    plt.show()
+    result_dir = os.path.join(exp_dir, 'g{0}'.format(epoch))
     os.makedirs(result_dir, exist_ok=True)
-    # save model
-    net.state_dict()
-    torch.save(net, os.path.join(result_dir, 'unet_model_weights.h5'))
-
-    for i, test_IDs in enumerate(groups):
-        train_ID = [ID for ID in dataset.keys()]
-    for test_ID in tqdm.tqdm(train_ID, desc='Testing'):
-        x_test = np.fromstring(dataset[test_ID]['x'])
-        predict_label = (np.argmax(out, axis=0)).numpy()
-        mhd.write(os.path.join(result_img_dir, test_ID), predict_label)
-        datay = np.resize((dataset[test_ID]['y']), (2, 68, 68))
-        JIs[test_ID], DCs[test_ID] = evaluate(predict_label, datay)
-        refined = refine_labels(predict_label)
-        mhd.write(os.path.join(result_img_dir, 'refined_' + test_ID), refined)
-        refined_JIs[test_ID], refined_DCs[test_ID] = evaluate(refined, datay)
-
-np.savetxt(os.path.join(exp_dir, 'refined_JI.csv'), np.stack([refined_JIs[ID] for ID in all_IDs]),
-           delimiter=",", fmt='%g')
-np.savetxt(os.path.join(exp_dir, 'refined_Dice.csv'), np.stack([refined_DCs[ID] for ID in all_IDs]),
-           delimiter=",", fmt='%g')

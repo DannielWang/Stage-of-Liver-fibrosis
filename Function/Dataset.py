@@ -4,10 +4,12 @@ import os
 import torch
 import SimpleITK as sitk
 import tqdm
+import matplotlib.pyplot as plt
+from torchvision import datasets, transforms, models
 
 
 class ShipDataset(Dataset):
-    def __init__(self, ImagePath, LabelPath, augment=None):
+    def __init__(self, ImagePath, LabelPath, valid_size=.2, augment=None):
         # All this list stored direction of Img.
         self.image_paths = np.array([x.path for x in os.scandir(ImagePath)
                                      if x.name.endswith('image.mhd')])
@@ -19,11 +21,6 @@ class ShipDataset(Dataset):
         self.labels = []
 
         for i in tqdm.tqdm(range(len(self.image_paths)), desc='Loading images'):
-        # for i in tqdm.tqdm(os.listdir(self.image_paths), desc='Loading images'):
-        #     if os.path.isfile(self.image_paths + '\\' + i):
-        #         out = i.split('.')
-        #         if len(i) >= 2:
-        #             if out[1] == 'mhd':
             image = sitk.ReadImage(self.image_paths[i])
             label = sitk.ReadImage(self.label_paths[i])
             image = sitk.GetArrayFromImage(image)
@@ -33,6 +30,20 @@ class ShipDataset(Dataset):
             for j in range(image.shape[0]):
                 self.images.append(image[j])
                 self.labels.append(label[j])
+
+        num_train = len(self.images)
+        indices = list(range(num_train))
+        split = int(np.floor(valid_size * num_train))
+        np.random.shuffle(indices)
+        from torch.utils.data.sampler import SubsetRandomSampler
+        train_idx, test_idx = indices[split:], indices[:split]
+        train_sampler = SubsetRandomSampler(train_idx)
+        test_sampler = SubsetRandomSampler(test_idx)
+        trainloader = torch.utils.data.DataLoader(image,
+                                                  sampler=train_sampler, batch_size=64)
+        testloader = torch.utils.data.DataLoader(image,
+                                                 sampler=test_sampler, batch_size=64)
+        return trainloader,testloader
 
     def __getitem__(self, index):
         # Load the Image and return it.
