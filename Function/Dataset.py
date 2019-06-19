@@ -1,3 +1,4 @@
+from scipy import ndimage
 from torch.utils.data import Dataset
 import numpy as np
 import os
@@ -5,8 +6,13 @@ import torch
 import SimpleITK as sitk
 import tqdm
 import matplotlib.pyplot as plt
+import mhd
 from torchvision import datasets, transforms, models
 
+def downsample(img, size):
+    down_img = ndimage.interpolation.zoom(img, (1, size / img.shape[1], size / img.shape[2]))
+
+    return down_img
 
 class ShipDataset(Dataset):
     def __init__(self, ImagePath, LabelPath, valid_size=.2, augment=None):
@@ -21,10 +27,10 @@ class ShipDataset(Dataset):
         self.labels = []
 
         for i in tqdm.tqdm(range(len(self.image_paths)), desc='Loading images'):
-            image = sitk.ReadImage(self.image_paths[i])
-            label = sitk.ReadImage(self.label_paths[i])
-            image = sitk.GetArrayFromImage(image)
-            label = sitk.GetArrayFromImage(label)
+            image, image_header = mhd.read(self.image_paths[i])
+            label, label_header = mhd.read(self.label_paths[i])
+            image = downsample(image, 256)
+            label = (downsample(label, 256)).astype(np.uint32)
             image = torch.Tensor(image)
             label = torch.Tensor(label)
             for j in range(image.shape[0]):
